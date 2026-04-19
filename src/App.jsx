@@ -247,16 +247,24 @@ export default function App() {
     }, 1800);
 
     try {
-      const response = await fetch(EXTRACT_ENDPOINT, {
+      let response = await fetch(EXTRACT_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ base64Data, mimeType })
       });
 
+      if (response.status === 404 && EXTRACT_ENDPOINT !== '/api/extract') {
+        response = await fetch('/api/extract', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ base64Data, mimeType })
+        });
+      }
+
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
         if (response.status === 404) {
-          throw new Error('Extraction endpoint not found. Ensure backend is deployed and reachable at /api/extract.');
+          throw new Error('Extraction endpoint not found. Ensure backend is deployed and reachable at /api/extract, then hard refresh.');
         }
         throw new Error(payload?.error || `Extraction failed (${response.status})`);
       }
