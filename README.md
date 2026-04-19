@@ -7,6 +7,7 @@ Now includes:
 - Stable invoice IDs for reliable edit/delete/select behavior
 - Server-side AI extraction endpoint (`/api/extract`) to keep API keys out of the browser
 - Zod-based form validation
+- Tailwind CSS compiled locally (no CDN in production)
 
 ## Run locally
 
@@ -53,3 +54,13 @@ Health endpoint:
 - Payload type/size validation and upload caps
 - Gemini request timeout handling
 - Sanitized extraction response before returning to client
+
+## Troubleshooting
+
+- `/api/extract` returns `404`:
+   - Ensure backend is deployed and running in the same service/container.
+   - If frontend and API are on different domains, set `VITE_API_BASE_URL` at build time.
+- `cdn.tailwindcss.com should not be used in production`:
+   - Fixed in this project by switching to compiled Tailwind via PostCSS.
+- `Host validation failed` / `Host is not supported` messages:
+   - Usually from a browser extension, not this app runtime.

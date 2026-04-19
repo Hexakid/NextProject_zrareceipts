@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { loadInitialData, saveEntries, saveDarkMode } from './db';
 import { normalizeFormData, validateInvoiceEntry } from './validation';
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+
 export default function App() {
   // 1. Data Management: Load initial state from IndexedDB
   const [entries, setEntries] = useState([]);
@@ -243,7 +245,7 @@ export default function App() {
     }, 1800);
 
     try {
-      const response = await fetch('/api/extract', {
+      const response = await fetch(`${API_BASE_URL}/api/extract`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ base64Data, mimeType })
@@ -251,6 +253,9 @@ export default function App() {
 
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
+        if (response.status === 404) {
+          throw new Error('Extraction endpoint not found. Ensure backend is deployed and reachable at /api/extract.');
+        }
         throw new Error(payload?.error || `Extraction failed (${response.status})`);
       }
 
