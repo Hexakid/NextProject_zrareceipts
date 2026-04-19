@@ -6,6 +6,7 @@ Now includes:
 - IndexedDB persistence via Dexie
 - Stable invoice IDs for reliable edit/delete/select behavior
 - Server-side AI extraction endpoint (`/api/extract`) to keep API keys out of the browser
+- Login page with cookie-based session auth
 - Zod-based form validation
 - Tailwind CSS compiled locally (no CDN in production)
 
@@ -37,8 +38,11 @@ This app is ready for Dokploy using Docker.
 2. Select Docker build (it will use [Dockerfile](Dockerfile)).
 3. Set environment variables:
    - `GEMINI_API_KEY` = your Gemini key
-   - `GEMINI_MODEL` = `gemini-2.0-flash` (or a model your key can access)
-   - `GEMINI_FALLBACK_MODELS` = `gemini-2.0-flash-lite,gemini-1.5-flash-latest,gemini-1.5-pro` (comma-separated fallback models)
+   - `GEMINI_MODEL` = `gemini-2.5-flash` (or a model your key can access)
+   - `GEMINI_FALLBACK_MODELS` = `gemini-2.0-flash,gemini-2.0-flash-001,gemini-2.0-flash-lite` (comma-separated fallback models)
+   - `AUTH_USERNAME` = login username (change from default)
+   - `AUTH_PASSWORD` = login password (change from default)
+   - `AUTH_SESSION_TTL_HOURS` = `12` (optional)
    - `NODE_ENV` = `production`
    - `PORT` = `3000` (optional, Dokploy can inject this)
    - `TRUST_PROXY` = `1`
@@ -47,6 +51,7 @@ This app is ready for Dokploy using Docker.
 
 Health endpoint:
 - `GET /api/health`
+- `GET /api/auth/session`
 
 ### Production hardening included
 
@@ -56,6 +61,7 @@ Health endpoint:
 - Payload type/size validation and upload caps
 - Gemini request timeout handling
 - Sanitized extraction response before returning to client
+- Cookie-based auth on extraction and model endpoints
 
 ## Troubleshooting
 

@@ -25,6 +25,12 @@ export default function App() {
   const [qrLink, setQrLink] = useState('');
   const [editId, setEditId] = useState(null);
   const [toast, setToast] = useState(null); 
+  const [authUser, setAuthUser] = useState('');
+  const [authPass, setAuthPass] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   // Search & Preview State
   const [searchTerm, setSearchTerm] = useState('');
@@ -59,6 +65,77 @@ export default function App() {
     }
     return () => stopCamera();
   }, []);
+
+  // Authentication check
+  useEffect(() => {
+    let mounted = true;
+
+    const checkSession = async () => {
+      try {
+        const res = await fetch('/api/auth/session', { credentials: 'include' });
+        const payload = await res.json().catch(() => ({}));
+        if (!mounted) return;
+        if (payload?.authenticated) {
+          setIsAuthenticated(true);
+          setAuthError('');
+        } else {
+          setIsAuthenticated(false);
+        }
+      } catch (_) {
+        if (!mounted) return;
+        setIsAuthenticated(false);
+        setAuthError('Unable to verify session. Please try again.');
+      } finally {
+        if (mounted) setAuthLoading(false);
+      }
+    };
+
+    checkSession();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setAuthSubmitting(true);
+    setAuthError('');
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: authUser, password: authPass })
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload?.error || 'Login failed.');
+      setIsAuthenticated(true);
+      setAuthPass('');
+      setAuthError('');
+      setAuthLoading(false);
+      showToast('Logged in successfully.');
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : 'Login failed.');
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include'
+      });
+    } catch (_) {
+      // no-op
+    }
+    setAuthLoading(false);
+    setIsAuthenticated(false);
+    setAuthUser('');
+    setAuthPass('');
+    setAuthError('Logged out. Please sign in again.');
+  };
 
   // Load from DB (and migrate legacy localStorage once)
   useEffect(() => {
@@ -247,6 +324,7 @@ export default function App() {
     try {
       let response = await fetch(EXTRACT_ENDPOINT, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ base64Data, mimeType })
       });
@@ -255,6 +333,10 @@ export default function App() {
         const payload = await response.json().catch(() => ({}));
         if (response.status === 404 && !payload?.error) {
           throw new Error('Extraction endpoint not found. Ensure backend is deployed and reachable at /api/extract, then hard refresh.');
+        }
+        if (response.status === 401) {
+          setIsAuthenticated(false);
+          throw new Error('Your session expired. Please sign in again.');
         }
         // payload.error is already a human-friendly message from the server.
         // payload.geminiMessage is the raw Gemini detail (show as secondary info).
@@ -520,6 +602,61 @@ export default function App() {
   const isVatDiscrepant = formData.amountBeforeVat && formData.vatCharged && 
                           Math.abs(parseFloat(formData.vatCharged) - (parseFloat(formData.amountBeforeVat) * 0.16)) > 0.05;
 
+  if (authLoading) {
+    return (
+      <div className={`min-h-screen flex items-center justify-center ${isDarkMode ? 'bg-gray-900 text-gray-200' : 'bg-gray-50 text-gray-800'}`}>
+        <div className={`p-8 rounded-2xl border shadow-sm ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+          <p className="font-semibold">Checking session...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className={`min-h-screen flex items-center justify-center p-4 ${isDarkMode ? 'bg-gray-900 text-gray-200' : 'bg-gray-50 text-gray-800'}`}>
+        <div className={`w-full max-w-md p-8 rounded-2xl shadow-sm border ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+          <h1 className={`text-2xl font-extrabold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>🔐 Sign in</h1>
+          <p className={`text-sm mb-6 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>VAT Receipt Data Collector</p>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className={`block text-sm font-bold mb-1.5 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Username</label>
+              <input
+                type="text"
+                value={authUser}
+                onChange={(e) => setAuthUser(e.target.value)}
+                autoComplete="username"
+                required
+                className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none ${isDarkMode ? 'bg-gray-900 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`}
+              />
+            </div>
+            <div>
+              <label className={`block text-sm font-bold mb-1.5 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Password</label>
+              <input
+                type="password"
+                value={authPass}
+                onChange={(e) => setAuthPass(e.target.value)}
+                autoComplete="current-password"
+                required
+                className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none ${isDarkMode ? 'bg-gray-900 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`}
+              />
+            </div>
+            {authError && (
+              <p className={`text-sm font-semibold ${isDarkMode ? 'text-red-400' : 'text-red-600'}`}>{authError}</p>
+            )}
+            <button
+              type="submit"
+              disabled={authSubmitting}
+              className={`w-full px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${authSubmitting ? 'opacity-50 cursor-not-allowed' : ''} ${isDarkMode ? 'bg-blue-700 text-white hover:bg-blue-600' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+            >
+              {authSubmitting ? 'Signing in...' : 'Sign in'}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`min-h-screen transition-colors duration-300 ${isDarkMode ? 'bg-gray-900 text-gray-200' : 'bg-gray-50 text-gray-800'}`}>
       <div className="p-4 md:p-8 relative">
@@ -557,6 +694,13 @@ export default function App() {
               {entries.length > 0 && <span className={`text-xs py-1.5 px-3 rounded-full font-bold shadow-sm flex items-center gap-1.5 ${isDarkMode ? 'bg-blue-900/50 text-blue-300 border border-blue-800' : 'bg-blue-100 text-blue-800'}`}>
                 <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div> Auto-Saving
               </span>}
+              <button
+                onClick={handleLogout}
+                className={`px-3 py-2 rounded-xl text-xs font-bold border transition-colors ${isDarkMode ? 'bg-gray-700 border-gray-600 text-gray-200 hover:bg-gray-600' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'}`}
+                title="Sign out"
+              >
+                Logout
+              </button>
               <button onClick={() => setIsDarkMode(!isDarkMode)} className={`p-2 rounded-xl transition-all border shadow-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-yellow-400 hover:bg-gray-600' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`} title="Toggle Dark Mode">
                 {isDarkMode ? '☀️' : '🌙'}
               </button>

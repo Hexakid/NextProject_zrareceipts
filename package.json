@@ -12,6 +12,7 @@
     "start": "node server/index.js"
   },
   "dependencies": {
+    "cookie-parser": "^1.4.7",
     "compression": "^1.8.1",
     "dexie": "^4.4.2",
     "dotenv": "^16.6.1",

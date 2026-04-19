@@ -1,9 +1,11 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import crypto from 'crypto';
 import helmet from 'helmet';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
+import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -22,6 +24,11 @@ const GEMINI_FALLBACK_MODELS = (
   .split(',')
   .map((m) => m.trim())
   .filter(Boolean);
+const AUTH_USERNAME = process.env.AUTH_USERNAME || 'admin';
+const AUTH_PASSWORD = process.env.AUTH_PASSWORD || 'admin123';
+const AUTH_COOKIE_NAME = 'vat_auth';
+const AUTH_SESSION_TTL_HOURS = Number(process.env.AUTH_SESSION_TTL_HOURS || 12);
+const sessions = new Map();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const distPath = path.resolve(__dirname, '../dist');
@@ -32,6 +39,42 @@ app.use(helmet({
 }));
 app.use(compression());
 app.use(express.json({ limit: `${MAX_UPLOAD_MB}mb` }));
+app.use(cookieParser());
+
+function createSession(username) {
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = Date.now() + AUTH_SESSION_TTL_HOURS * 60 * 60 * 1000;
+  sessions.set(token, { username, expiresAt });
+  return { token, expiresAt };
+}
+
+function getActiveSession(req) {
+  const token = req.cookies?.[AUTH_COOKIE_NAME];
+  if (!token) return null;
+  const session = sessions.get(token);
+  if (!session) return null;
+  if (session.expiresAt <= Date.now()) {
+    sessions.delete(token);
+    return null;
+  }
+  return { token, ...session };
+}
+
+function requireAuth(req, res, next) {
+  const session = getActiveSession(req);
+  if (!session) {
+    return res.status(401).json({ error: 'Authentication required. Please log in.' });
+  }
+  req.user = { username: session.username };
+  return next();
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, session] of sessions.entries()) {
+    if (session.expiresAt <= now) sessions.delete(token);
+  }
+}, 5 * 60 * 1000).unref();
 
 const extractionLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -70,9 +113,44 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
+app.get('/api/auth/session', (req, res) => {
+  const session = getActiveSession(req);
+  if (!session) return res.json({ authenticated: false });
+  return res.json({ authenticated: true, username: session.username });
+});
+
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body ?? {};
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password are required.' });
+  }
+
+  const isValid = String(username) === AUTH_USERNAME && String(password) === AUTH_PASSWORD;
+  if (!isValid) {
+    return res.status(401).json({ error: 'Invalid username or password.' });
+  }
+
+  const { token } = createSession(String(username));
+  res.cookie(AUTH_COOKIE_NAME, token, {
+    httpOnly: true,
+    secure: IS_PROD,
+    sameSite: 'lax',
+    maxAge: AUTH_SESSION_TTL_HOURS * 60 * 60 * 1000,
+    path: '/'
+  });
+  return res.json({ ok: true, username: String(username) });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  const token = req.cookies?.[AUTH_COOKIE_NAME];
+  if (token) sessions.delete(token);
+  res.clearCookie(AUTH_COOKIE_NAME, { path: '/' });
+  return res.json({ ok: true });
+});
+
 // Lists Gemini models available for the configured API key.
 // Useful for diagnosing which models you can actually use.
-app.get('/api/models', async (_req, res) => {
+app.get('/api/models', requireAuth, async (_req, res) => {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return res.status(500).json({ error: 'GEMINI_API_KEY not set.' });
@@ -96,7 +174,7 @@ app.get('/api/models', async (_req, res) => {
   }
 });
 
-app.post('/api/extract', extractionLimiter, async (req, res) => {
+app.post('/api/extract', requireAuth, extractionLimiter, async (req, res) => {
   try {
     const { base64Data, mimeType } = req.body ?? {};
 
@@ -244,5 +322,8 @@ app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT} (${NODE_ENV})`);
   if (!process.env.GEMINI_API_KEY && IS_PROD) {
     console.warn('Warning: GEMINI_API_KEY is not set. AI extraction endpoint will fail.');
+  }
+  if (IS_PROD && AUTH_USERNAME === 'admin' && AUTH_PASSWORD === 'admin123') {
+    console.warn('Warning: using default AUTH_USERNAME/AUTH_PASSWORD. Set strong values in production.');
   }
 });
