@@ -15,6 +15,10 @@ const PORT = Number(process.env.PORT || (IS_PROD ? 3000 : 8787));
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 25);
 const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS || 30000);
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+const GEMINI_FALLBACK_MODELS = (process.env.GEMINI_FALLBACK_MODELS || 'gemini-1.5-flash')
+  .split(',')
+  .map((m) => m.trim())
+  .filter(Boolean);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const distPath = path.resolve(__dirname, '../dist');
@@ -91,7 +95,7 @@ app.post('/api/extract', extractionLimiter, async (req, res) => {
       });
     }
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+    const modelCandidates = Array.from(new Set([GEMINI_MODEL, ...GEMINI_FALLBACK_MODELS]));
     const prompt = 'Extract the invoice details from this document to match the schema. If a value is missing, leave it as an empty string. For TPIN, ensure it is exactly 10 digits if found. Format dates as YYYY-MM-DD. For amounts, only return numbers and decimals, strip out currency symbols.';
 
     const payload = {
@@ -121,25 +125,42 @@ app.post('/api/extract', extractionLimiter, async (req, res) => {
       }
     };
 
-    const timeoutController = new AbortController();
-    const timeoutId = setTimeout(() => timeoutController.abort(), GEMINI_TIMEOUT_MS);
+    let result = null;
+    let lastFailure = null;
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: timeoutController.signal
-    }).finally(() => clearTimeout(timeoutId));
+    for (const model of modelCandidates) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const timeoutController = new AbortController();
+      const timeoutId = setTimeout(() => timeoutController.abort(), GEMINI_TIMEOUT_MS);
 
-    if (!response.ok) {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: timeoutController.signal
+      }).finally(() => clearTimeout(timeoutId));
+
+      if (response.ok) {
+        result = await response.json();
+        lastFailure = null;
+        break;
+      }
+
       const details = await response.text();
+      lastFailure = { model, status: response.status, details };
+
+      // Retry with fallback only for model-not-found style failures.
+      if (response.status !== 404) break;
+    }
+
+    if (!result) {
       return res.status(502).json({
-        error: 'Gemini request failed. Check GEMINI_MODEL and API key permissions.',
-        details
+        error: 'Gemini request failed. Check GEMINI_MODEL, GEMINI_FALLBACK_MODELS and API key permissions.',
+        triedModels: modelCandidates,
+        details: lastFailure
       });
     }
 
-    const result = await response.json();
     const extractedText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!extractedText) {
