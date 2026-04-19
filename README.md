@@ -59,7 +59,7 @@ Health endpoint:
 
 - `/api/extract` returns `404`:
    - Ensure backend is deployed and running in the same service/container.
-   - If frontend and API are on different domains, set `VITE_API_BASE_URL` at build time.
+   - Ensure the domain route forwards `/api/*` to the same app service.
 - `cdn.tailwindcss.com should not be used in production`:
    - Fixed in this project by switching to compiled Tailwind via PostCSS.
 - `Host validation failed` / `Host is not supported` messages:
