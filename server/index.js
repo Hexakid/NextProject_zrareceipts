@@ -15,7 +15,10 @@ const PORT = Number(process.env.PORT || (IS_PROD ? 3000 : 8787));
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 25);
 const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS || 30000);
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
-const GEMINI_FALLBACK_MODELS = (process.env.GEMINI_FALLBACK_MODELS || 'gemini-1.5-flash')
+const GEMINI_FALLBACK_MODELS = (
+  process.env.GEMINI_FALLBACK_MODELS ||
+  'gemini-2.0-flash-lite,gemini-2.0-flash-exp,gemini-1.5-flash-latest,gemini-1.5-flash,gemini-1.5-pro-latest,gemini-1.5-pro'
+)
   .split(',')
   .map((m) => m.trim())
   .filter(Boolean);
@@ -65,6 +68,32 @@ app.get('/api/health', (_req, res) => {
     env: NODE_ENV,
     uptimeSeconds: Math.floor(process.uptime())
   });
+});
+
+// Lists Gemini models available for the configured API key.
+// Useful for diagnosing which models you can actually use.
+app.get('/api/models', async (_req, res) => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({ error: 'GEMINI_API_KEY not set.' });
+  }
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}&pageSize=100`
+    );
+    const json = await response.json();
+    if (!response.ok) {
+      return res.status(502).json({ error: 'Gemini ListModels failed.', details: json });
+    }
+    // Return only models that support generateContent, sorted by name.
+    const models = (json.models ?? [])
+      .filter((m) => (m.supportedGenerationMethods ?? []).includes('generateContent'))
+      .map((m) => ({ name: m.name, displayName: m.displayName, description: m.description }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return res.json({ models, configuredPrimary: GEMINI_MODEL, configuredFallbacks: GEMINI_FALLBACK_MODELS });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to fetch models.', details: err.message });
+  }
 });
 
 app.post('/api/extract', extractionLimiter, async (req, res) => {

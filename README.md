@@ -38,7 +38,7 @@ This app is ready for Dokploy using Docker.
 3. Set environment variables:
    - `GEMINI_API_KEY` = your Gemini key
    - `GEMINI_MODEL` = `gemini-2.0-flash` (or a model your key can access)
-   - `GEMINI_FALLBACK_MODELS` = `gemini-1.5-flash` (comma-separated fallback models)
+   - `GEMINI_FALLBACK_MODELS` = `gemini-2.0-flash-lite,gemini-1.5-flash-latest,gemini-1.5-pro` (comma-separated fallback models)
    - `NODE_ENV` = `production`
    - `PORT` = `3000` (optional, Dokploy can inject this)
    - `TRUST_PROXY` = `1`
@@ -58,6 +58,11 @@ Health endpoint:
 - Sanitized extraction response before returning to client
 
 ## Troubleshooting
+
+- **Which Gemini models can my API key use?**
+   - Call `GET /api/models` on your deployed app (e.g. `https://yourdomain.com/api/models`).
+   - This returns all `generateContent`-capable models for your key.
+   - Set `GEMINI_MODEL` to the first model in that list and update `GEMINI_FALLBACK_MODELS` accordingly.
 
 - `/api/extract` returns `404`:
    - Ensure backend is deployed and running in the same service/container.
