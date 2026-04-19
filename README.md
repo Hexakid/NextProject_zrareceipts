@@ -37,6 +37,7 @@ This app is ready for Dokploy using Docker.
 2. Select Docker build (it will use [Dockerfile](Dockerfile)).
 3. Set environment variables:
    - `GEMINI_API_KEY` = your Gemini key
+   - `GEMINI_MODEL` = `gemini-2.0-flash` (or a model your key can access)
    - `NODE_ENV` = `production`
    - `PORT` = `3000` (optional, Dokploy can inject this)
    - `TRUST_PROXY` = `1`

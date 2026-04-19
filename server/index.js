@@ -14,6 +14,7 @@ const IS_PROD = NODE_ENV === 'production';
 const PORT = Number(process.env.PORT || (IS_PROD ? 3000 : 8787));
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 25);
 const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS || 30000);
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const distPath = path.resolve(__dirname, '../dist');
@@ -90,7 +91,7 @@ app.post('/api/extract', extractionLimiter, async (req, res) => {
       });
     }
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
     const prompt = 'Extract the invoice details from this document to match the schema. If a value is missing, leave it as an empty string. For TPIN, ensure it is exactly 10 digits if found. Format dates as YYYY-MM-DD. For amounts, only return numbers and decimals, strip out currency symbols.';
 
     const payload = {
@@ -132,7 +133,10 @@ app.post('/api/extract', extractionLimiter, async (req, res) => {
 
     if (!response.ok) {
       const details = await response.text();
-      return res.status(response.status).json({ error: 'Gemini request failed.', details });
+      return res.status(502).json({
+        error: 'Gemini request failed. Check GEMINI_MODEL and API key permissions.',
+        details
+      });
     }
 
     const result = await response.json();

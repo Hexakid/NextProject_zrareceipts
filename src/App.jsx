@@ -253,7 +253,7 @@ export default function App() {
 
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
-        if (response.status === 404) {
+        if (response.status === 404 && !payload?.error) {
           throw new Error('Extraction endpoint not found. Ensure backend is deployed and reachable at /api/extract, then hard refresh.');
         }
         throw new Error(payload?.error || `Extraction failed (${response.status})`);
