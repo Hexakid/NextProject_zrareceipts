@@ -2,7 +2,9 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { loadInitialData, saveEntries, saveDarkMode } from './db';
 import { normalizeFormData, validateInvoiceEntry } from './validation';
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+const RAW_API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').trim();
+const API_BASE_URL = RAW_API_BASE_URL.replace(/\/$/, '').replace(/\/api$/, '');
+const EXTRACT_ENDPOINT = API_BASE_URL ? `${API_BASE_URL}/api/extract` : '/api/extract';
 
 export default function App() {
   // 1. Data Management: Load initial state from IndexedDB
@@ -245,7 +247,7 @@ export default function App() {
     }, 1800);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/extract`, {
+      const response = await fetch(EXTRACT_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ base64Data, mimeType })
