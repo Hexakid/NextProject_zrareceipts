@@ -14,10 +14,10 @@ const IS_PROD = NODE_ENV === 'production';
 const PORT = Number(process.env.PORT || (IS_PROD ? 3000 : 8787));
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 25);
 const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS || 30000);
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 const GEMINI_FALLBACK_MODELS = (
   process.env.GEMINI_FALLBACK_MODELS ||
-  'gemini-2.0-flash-lite,gemini-2.0-flash-exp,gemini-1.5-flash-latest,gemini-1.5-flash,gemini-1.5-pro-latest,gemini-1.5-pro'
+  'gemini-2.0-flash,gemini-2.0-flash-001,gemini-2.0-flash-lite'
 )
   .split(',')
   .map((m) => m.trim())
