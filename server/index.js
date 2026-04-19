@@ -146,18 +146,41 @@ app.post('/api/extract', extractionLimiter, async (req, res) => {
         break;
       }
 
-      const details = await response.text();
-      lastFailure = { model, status: response.status, details };
+      let detailsText = await response.text();
+      let detailsParsed = null;
+      try { detailsParsed = JSON.parse(detailsText); } catch (_) { /* ignore */ }
+      lastFailure = { model, status: response.status, details: detailsParsed ?? detailsText };
 
-      // Retry with fallback only for model-not-found style failures.
-      if (response.status !== 404) break;
+      // Retry with fallback models for:
+      //   404 = model not available for this key
+      //   429 = quota exhausted (fallback may have separate quota)
+      //   503 = model overloaded
+      const retryStatuses = new Set([404, 429, 503]);
+      if (!retryStatuses.has(response.status)) break;
     }
 
     if (!result) {
+      const lastStatus = lastFailure?.status;
+      const geminiCode = lastFailure?.details?.error?.code;
+      const geminiMsg  = lastFailure?.details?.error?.message ?? '';
+
+      // Human-readable top-level error message
+      let friendlyError;
+      if (lastStatus === 429 || geminiCode === 429) {
+        friendlyError = 'Gemini API quota exceeded for all available models. Please wait a few minutes and try again, or upgrade your Google AI plan at https://ai.dev/rate-limit.';
+      } else if (lastStatus === 404) {
+        friendlyError = 'None of the configured Gemini models are available for your API key. Update GEMINI_MODEL / GEMINI_FALLBACK_MODELS in your environment.';
+      } else if (lastStatus === 401 || lastStatus === 403) {
+        friendlyError = 'Gemini API key is invalid or lacks permission. Check GEMINI_API_KEY in your environment.';
+      } else {
+        friendlyError = `Gemini request failed (HTTP ${lastStatus}). Check GEMINI_MODEL, GEMINI_FALLBACK_MODELS and API key permissions.`;
+      }
+
       return res.status(502).json({
-        error: 'Gemini request failed. Check GEMINI_MODEL, GEMINI_FALLBACK_MODELS and API key permissions.',
+        error: friendlyError,
         triedModels: modelCandidates,
-        details: lastFailure
+        geminiStatus: lastStatus,
+        geminiMessage: geminiMsg || undefined
       });
     }
 

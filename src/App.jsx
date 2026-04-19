@@ -256,11 +256,11 @@ export default function App() {
         if (response.status === 404 && !payload?.error) {
           throw new Error('Extraction endpoint not found. Ensure backend is deployed and reachable at /api/extract, then hard refresh.');
         }
-        const detailText = typeof payload?.details === 'string'
-          ? payload.details
-          : payload?.details?.details || '';
+        // payload.error is already a human-friendly message from the server.
+        // payload.geminiMessage is the raw Gemini detail (show as secondary info).
         const msg = payload?.error || `Extraction failed (${response.status})`;
-        throw new Error(detailText ? `${msg} ${detailText}` : msg);
+        const extra = payload?.geminiMessage ? `\n\nGemini detail: ${payload.geminiMessage}` : '';
+        throw new Error(`${msg}${extra}`);
       }
 
       const result = await response.json();
