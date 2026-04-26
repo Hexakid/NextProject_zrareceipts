@@ -4,7 +4,7 @@ React + Vite app for ZRA invoice capture, scanning, and CSV export.
 
 Now includes:
 - IndexedDB persistence via Dexie
-- Server-side shared entries sync (cross-device when using same login)
+- Server-side shared entries sync (all signed-in devices merge into one shared dataset)
 - Stable invoice IDs for reliable edit/delete/select behavior
 - Server-side AI extraction endpoint (`/api/extract`) to keep API keys out of the browser
 - Login page with cookie-based session auth
@@ -66,6 +66,12 @@ Health endpoint:
 - Sanitized extraction response before returning to client
 - Cookie-based auth on extraction and model endpoints
 - Local IndexedDB fallback, so device data is preserved even if server sync is temporarily unavailable
+
+### Shared data behavior
+
+- Entries are synced to a shared server dataset.
+- Data entered from different devices is merged by `id` (no overwrite of unique records).
+- Keep persistent volume mounted at `/app/data` so shared entries survive redeploys.
 
 ## Troubleshooting
 

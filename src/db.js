@@ -159,12 +159,11 @@ export async function saveEntries(entries) {
   await writeLocalEntries(normalizedEntries);
 
   try {
-    await fetch(ENTRIES_API, {
-      method: 'PUT',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ entries: stripOrder(normalizedEntries) })
-    });
+    const synced = await syncServerEntries(normalizedEntries);
+    if (synced.length > 0) {
+      const normalizedSynced = synced.map((entry, idx) => normalizeEntry(entry, idx));
+      await writeLocalEntries(normalizedSynced);
+    }
   } catch {
     // Keep local data if server save fails.
   }

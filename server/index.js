@@ -77,8 +77,36 @@ async function ensureDataStore() {
   try {
     await readFile(dataFilePath, 'utf8');
   } catch {
-    await writeFile(dataFilePath, JSON.stringify({ users: {} }, null, 2), 'utf8');
+    await writeFile(dataFilePath, JSON.stringify({ entries: [] }, null, 2), 'utf8');
   }
+}
+
+function mergeEntriesById(...entryLists) {
+  const byId = new Map();
+
+  for (const list of entryLists) {
+    if (!Array.isArray(list)) continue;
+    for (const entry of list) {
+      const normalized = normalizeEntry(entry, byId.size);
+      if (!byId.has(normalized.id)) byId.set(normalized.id, normalized);
+    }
+  }
+
+  return Array.from(byId.values()).map((entry, idx) => ({
+    ...normalizeEntry(entry, idx),
+    _order: idx
+  }));
+}
+
+function readSharedEntriesFromStore(store) {
+  const sharedEntries = Array.isArray(store?.entries) ? store.entries : [];
+
+  // Backward compatibility: migrate previous per-user format into shared pool.
+  const legacyUsersEntries = store?.users && typeof store.users === 'object'
+    ? Object.values(store.users).flatMap((list) => (Array.isArray(list) ? list : []))
+    : [];
+
+  return mergeEntriesById(sharedEntries, legacyUsersEntries);
 }
 
 async function readStore() {
@@ -86,12 +114,12 @@ async function readStore() {
   try {
     const raw = await readFile(dataFilePath, 'utf8');
     const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object' && parsed.users && typeof parsed.users === 'object') {
-      return parsed;
-    }
-    return { users: {} };
+    if (!parsed || typeof parsed !== 'object') return { entries: [] };
+    return {
+      entries: readSharedEntriesFromStore(parsed)
+    };
   } catch {
-    return { users: {} };
+    return { entries: [] };
   }
 }
 
@@ -206,10 +234,7 @@ app.post('/api/auth/logout', (req, res) => {
 app.get('/api/entries', requireAuth, async (req, res) => {
   try {
     const store = await readStore();
-    const userEntries = Array.isArray(store.users?.[req.user.username])
-      ? store.users[req.user.username]
-      : [];
-    return res.json({ entries: userEntries });
+    return res.json({ entries: Array.isArray(store.entries) ? store.entries : [] });
   } catch (err) {
     return res.status(500).json({
       error: 'Failed to load entries from server.',
@@ -221,8 +246,7 @@ app.get('/api/entries', requireAuth, async (req, res) => {
 app.put('/api/entries', requireAuth, async (req, res) => {
   try {
     const payloadEntries = sanitizeEntriesPayload(req.body?.entries);
-    const store = await readStore();
-    store.users[req.user.username] = payloadEntries;
+    const store = { entries: payloadEntries };
     await writeStore(store);
     return res.json({ ok: true, count: payloadEntries.length });
   } catch (err) {
@@ -237,23 +261,10 @@ app.post('/api/entries/sync', requireAuth, async (req, res) => {
   try {
     const localEntries = sanitizeEntriesPayload(req.body?.entries);
     const store = await readStore();
-    const remoteEntries = Array.isArray(store.users?.[req.user.username])
-      ? store.users[req.user.username]
-      : [];
+    const remoteEntries = Array.isArray(store.entries) ? store.entries : [];
+    const mergedEntries = mergeEntriesById(remoteEntries, localEntries);
 
-    const byId = new Map();
-    for (const entry of remoteEntries) byId.set(String(entry.id), entry);
-    for (const entry of localEntries) {
-      if (!byId.has(String(entry.id))) byId.set(String(entry.id), entry);
-    }
-
-    const mergedEntries = Array.from(byId.values()).map((entry, idx) => ({
-      ...normalizeEntry(entry, idx),
-      _order: idx
-    }));
-
-    store.users[req.user.username] = mergedEntries;
-    await writeStore(store);
+    await writeStore({ entries: mergedEntries });
 
     return res.json({ entries: mergedEntries, merged: true, count: mergedEntries.length });
   } catch (err) {
