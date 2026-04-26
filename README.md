@@ -4,6 +4,7 @@ React + Vite app for ZRA invoice capture, scanning, and CSV export.
 
 Now includes:
 - IndexedDB persistence via Dexie
+- Server-side shared entries sync (cross-device when using same login)
 - Stable invoice IDs for reliable edit/delete/select behavior
 - Server-side AI extraction endpoint (`/api/extract`) to keep API keys out of the browser
 - Login page with cookie-based session auth
@@ -43,11 +44,13 @@ This app is ready for Dokploy using Docker.
    - `AUTH_USERNAME` = login username (change from default)
    - `AUTH_PASSWORD` = login password (change from default)
    - `AUTH_SESSION_TTL_HOURS` = `12` (optional)
+   - `DATA_DIR` = `/app/data` (recommended for persistent shared entries)
    - `NODE_ENV` = `production`
    - `PORT` = `3000` (optional, Dokploy can inject this)
    - `TRUST_PROXY` = `1`
 4. Expose port `3000` in Dokploy service settings.
-5. Deploy.
+5. Attach a persistent volume to `/app/data` in Dokploy (important for server-side data retention).
+6. Deploy.
 
 Health endpoint:
 - `GET /api/health`
@@ -62,6 +65,7 @@ Health endpoint:
 - Gemini request timeout handling
 - Sanitized extraction response before returning to client
 - Cookie-based auth on extraction and model endpoints
+- Local IndexedDB fallback, so device data is preserved even if server sync is temporarily unavailable
 
 ## Troubleshooting
 

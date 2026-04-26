@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+import { mkdir, readFile, rename, writeFile } from 'fs/promises';
 import helmet from 'helmet';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
@@ -32,6 +33,8 @@ const sessions = new Map();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const distPath = path.resolve(__dirname, '../dist');
+const dataDir = path.resolve(process.env.DATA_DIR || path.resolve(__dirname, '../data'));
+const dataFilePath = path.join(dataDir, 'entries-store.json');
 
 app.set('trust proxy', Number(process.env.TRUST_PROXY || 1));
 app.use(helmet({
@@ -67,6 +70,58 @@ function requireAuth(req, res, next) {
   }
   req.user = { username: session.username };
   return next();
+}
+
+async function ensureDataStore() {
+  await mkdir(dataDir, { recursive: true });
+  try {
+    await readFile(dataFilePath, 'utf8');
+  } catch {
+    await writeFile(dataFilePath, JSON.stringify({ users: {} }, null, 2), 'utf8');
+  }
+}
+
+async function readStore() {
+  await ensureDataStore();
+  try {
+    const raw = await readFile(dataFilePath, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && parsed.users && typeof parsed.users === 'object') {
+      return parsed;
+    }
+    return { users: {} };
+  } catch {
+    return { users: {} };
+  }
+}
+
+async function writeStore(store) {
+  await ensureDataStore();
+  const tmpPath = `${dataFilePath}.tmp`;
+  await writeFile(tmpPath, JSON.stringify(store, null, 2), 'utf8');
+  await rename(tmpPath, dataFilePath);
+}
+
+function normalizeEntry(raw = {}, idx = 0) {
+  return {
+    id: raw.id ? String(raw.id) : crypto.randomUUID(),
+    tpinOfSupplier: raw.tpinOfSupplier ? String(raw.tpinOfSupplier) : '',
+    nameOfSupplier: raw.nameOfSupplier ? String(raw.nameOfSupplier) : '',
+    invoiceNumber: raw.invoiceNumber ? String(raw.invoiceNumber) : '',
+    invoiceDate: raw.invoiceDate ? String(raw.invoiceDate) : '',
+    descriptionOfSupply: raw.descriptionOfSupply ? String(raw.descriptionOfSupply) : '',
+    amountBeforeVat: raw.amountBeforeVat ? String(raw.amountBeforeVat) : '',
+    vatCharged: raw.vatCharged ? String(raw.vatCharged) : '',
+    imageDataUrl: raw.imageDataUrl ? String(raw.imageDataUrl) : null,
+    createdAt: raw.createdAt ? String(raw.createdAt) : new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    _order: typeof raw._order === 'number' ? raw._order : idx
+  };
+}
+
+function sanitizeEntriesPayload(entries) {
+  if (!Array.isArray(entries)) return [];
+  return entries.map((entry, idx) => normalizeEntry(entry, idx));
 }
 
 setInterval(() => {
@@ -146,6 +201,67 @@ app.post('/api/auth/logout', (req, res) => {
   if (token) sessions.delete(token);
   res.clearCookie(AUTH_COOKIE_NAME, { path: '/' });
   return res.json({ ok: true });
+});
+
+app.get('/api/entries', requireAuth, async (req, res) => {
+  try {
+    const store = await readStore();
+    const userEntries = Array.isArray(store.users?.[req.user.username])
+      ? store.users[req.user.username]
+      : [];
+    return res.json({ entries: userEntries });
+  } catch (err) {
+    return res.status(500).json({
+      error: 'Failed to load entries from server.',
+      details: err instanceof Error ? err.message : 'Unknown error'
+    });
+  }
+});
+
+app.put('/api/entries', requireAuth, async (req, res) => {
+  try {
+    const payloadEntries = sanitizeEntriesPayload(req.body?.entries);
+    const store = await readStore();
+    store.users[req.user.username] = payloadEntries;
+    await writeStore(store);
+    return res.json({ ok: true, count: payloadEntries.length });
+  } catch (err) {
+    return res.status(500).json({
+      error: 'Failed to save entries on server.',
+      details: err instanceof Error ? err.message : 'Unknown error'
+    });
+  }
+});
+
+app.post('/api/entries/sync', requireAuth, async (req, res) => {
+  try {
+    const localEntries = sanitizeEntriesPayload(req.body?.entries);
+    const store = await readStore();
+    const remoteEntries = Array.isArray(store.users?.[req.user.username])
+      ? store.users[req.user.username]
+      : [];
+
+    const byId = new Map();
+    for (const entry of remoteEntries) byId.set(String(entry.id), entry);
+    for (const entry of localEntries) {
+      if (!byId.has(String(entry.id))) byId.set(String(entry.id), entry);
+    }
+
+    const mergedEntries = Array.from(byId.values()).map((entry, idx) => ({
+      ...normalizeEntry(entry, idx),
+      _order: idx
+    }));
+
+    store.users[req.user.username] = mergedEntries;
+    await writeStore(store);
+
+    return res.json({ entries: mergedEntries, merged: true, count: mergedEntries.length });
+  } catch (err) {
+    return res.status(500).json({
+      error: 'Failed to sync entries with server.',
+      details: err instanceof Error ? err.message : 'Unknown error'
+    });
+  }
 });
 
 // Lists Gemini models available for the configured API key.
