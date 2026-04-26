@@ -330,7 +330,14 @@ app.post('/api/extract', requireAuth, extractionLimiter, async (req, res) => {
     }
 
     const modelCandidates = Array.from(new Set([GEMINI_MODEL, ...GEMINI_FALLBACK_MODELS]));
-    const prompt = 'Extract the invoice details from this document to match the schema. If a value is missing, leave it as an empty string. For TPIN, ensure it is exactly 10 digits if found. Format dates as YYYY-MM-DD. For amounts, only return numbers and decimals, strip out currency symbols.';
+    const prompt = [
+      'Extract the invoice details from this document to match the schema.',
+      'If a value is missing, leave it as an empty string.',
+      'For TPIN, ensure it is exactly 10 digits if found.',
+      'Format dates as YYYY-MM-DD.',
+      'For amounts, only return numbers and decimals, strip out currency symbols.',
+      'Important Shoprite rule: if this is a Shoprite receipt/invoice and invoice number is shown under "SDC Information" as "InvNo" (e.g. "InvNo. XXXXXXX"), set that value as invoiceNumber.'
+    ].join(' ');
 
     const payload = {
       contents: [
