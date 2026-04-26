@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { loadInitialData, saveEntries, saveDarkMode } from './db';
 import { normalizeFormData, validateInvoiceEntry } from './validation';
+import { compressImage } from './imageUtils';
 
 const EXTRACT_ENDPOINT = '/api/extract';
 
@@ -276,13 +277,34 @@ export default function App() {
     if (!videoRef.current || !canvasRef.current) return;
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const context = canvas.getContext("2d");
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
     
-    const base64Data = canvas.toDataURL("image/jpeg").split(',')[1];
-    setPreviewImage(`data:image/jpeg;base64,${base64Data}`);
+    // Maintain a reasonable max resolution for snapshots too
+    const MAX_WIDTH = 1280;
+    const MAX_HEIGHT = 1600;
+    let width = video.videoWidth;
+    let height = video.videoHeight;
+
+    if (width > height) {
+      if (width > MAX_WIDTH) {
+        height = Math.round((height * MAX_WIDTH) / width);
+        width = MAX_WIDTH;
+      }
+    } else {
+      if (height > MAX_HEIGHT) {
+        width = Math.round((width * MAX_HEIGHT) / height);
+        height = MAX_HEIGHT;
+      }
+    }
+
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    context.drawImage(video, 0, 0, width, height);
+    
+    // Use quality 0.7 to reduce size
+    const preview = canvas.toDataURL("image/jpeg", 0.7);
+    const base64Data = preview.split(',')[1];
+    setPreviewImage(preview);
     stopCamera();
     analyzeDocument(base64Data, "image/jpeg");
   };
@@ -468,16 +490,25 @@ export default function App() {
     if (!file) return;
 
     try {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => {
-        const base64 = reader.result.split(',')[1];
-        if (file.type.startsWith('image/')) setPreviewImage(reader.result);
-        else setPreviewImage(null);
+      if (file.type.startsWith('image/')) {
+        setIsScanning(true);
+        setScanStatusMsg("Optimizing image...");
+        const { base64, preview } = await compressImage(file);
+        setPreviewImage(preview);
         analyzeDocument(base64, file.type);
-      };
+      } else {
+        // For PDFs or other allowed types, use standard reader
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => {
+          const base64 = reader.result.split(',')[1];
+          setPreviewImage(null);
+          analyzeDocument(base64, file.type);
+        };
+      }
     } catch (err) {
-      setScanError("Failed to read file.");
+      setScanError("Failed to process file.");
+      setIsScanning(false);
     } finally {
       e.target.value = ''; 
     }
