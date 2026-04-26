@@ -441,9 +441,18 @@ export default function App() {
       return;
     }
 
+    const currentEditEntry = editId ? entries.find((entry) => entry.id === editId) : null;
+    const resolvedImageDataUrl = previewImage || currentEditEntry?.imageDataUrl || null;
+
+    if (!resolvedImageDataUrl) {
+      showToast('Please upload or capture a receipt photo before saving.', 'error');
+      return;
+    }
+
     const entryPayload = {
       ...validation.data,
-      id: editId ?? crypto.randomUUID()
+      id: editId ?? crypto.randomUUID(),
+      imageDataUrl: resolvedImageDataUrl
     };
 
     if (editId !== null) {
@@ -467,8 +476,9 @@ export default function App() {
   const handleEdit = (id) => {
     const target = entries.find((entry) => entry.id === id);
     if (!target) return;
-    const { id: _id, ...editable } = target;
+    const { id: _id, imageDataUrl: _imageDataUrl, ...editable } = target;
     setFormData(editable);
+    setPreviewImage(target.imageDataUrl || null);
     setEditId(id);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -999,6 +1009,18 @@ export default function App() {
                             <td className={`px-4 py-3 text-sm font-mono text-right whitespace-nowrap ${isDarkMode ? 'text-gray-200' : 'text-gray-900'}`}>{parseFloat(entry.amountBeforeVat).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                             <td className={`px-4 py-3 text-sm font-mono text-right whitespace-nowrap ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>{parseFloat(entry.vatCharged).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                             <td className="px-4 py-3 text-sm text-center whitespace-nowrap">
+                              {entry.imageDataUrl && (
+                                <button
+                                  onClick={() => {
+                                    setPreviewImage(entry.imageDataUrl);
+                                    setIsImageExpanded(true);
+                                  }}
+                                  className={`mx-1 p-1.5 rounded-lg transition-transform active:scale-90 ${isDarkMode ? 'text-emerald-400 hover:bg-emerald-900/50' : 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100'}`}
+                                  title="View Receipt Photo"
+                                >
+                                  🖼️
+                                </button>
+                              )}
                               <button onClick={() => handleEdit(entry.id)} className={`mx-1 p-1.5 rounded-lg transition-transform active:scale-90 ${isDarkMode ? 'text-blue-400 hover:bg-blue-900/50' : 'text-blue-600 bg-blue-50 hover:bg-blue-100'}`} title="Edit">✏️</button>
                               <button onClick={() => handleDelete(entry.id)} className={`mx-1 p-1.5 rounded-lg transition-transform active:scale-90 ${isDarkMode ? 'text-red-400 hover:bg-red-900/50' : 'text-red-600 bg-red-50 hover:bg-red-100'}`} title="Delete">🗑️</button>
                             </td>
