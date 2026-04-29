@@ -362,8 +362,13 @@ export default function App() {
         }
         // payload.error is already a human-friendly message from the server.
         // payload.geminiMessage is the raw Gemini detail (show as secondary info).
+        const quotaExtra = payload?.quotaHint?.isDaily
+          ? '\n\nDaily request quota is exhausted for this Gemini model. Check your Google AI quota dashboard for the exact used/allowed count.'
+          : payload?.quotaHint?.summary
+            ? `\n\n${payload.quotaHint.summary}`
+            : '';
         const msg = payload?.error || `Extraction failed (${response.status})`;
-        const extra = payload?.geminiMessage ? `\n\nGemini detail: ${payload.geminiMessage}` : '';
+        const extra = quotaExtra || (payload?.geminiMessage ? `\n\nGemini detail: ${payload.geminiMessage}` : '');
         throw new Error(`${msg}${extra}`);
       }
 

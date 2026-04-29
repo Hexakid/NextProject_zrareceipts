@@ -188,6 +188,43 @@ function sanitizeExtractionOutput(raw = {}) {
   };
 }
 
+function extractGeminiQuotaHint(details) {
+  const errorMessage = details?.error?.message || '';
+  const violations = details?.error?.details?.find(
+    (item) => item?.['@type'] === 'type.googleapis.com/google.rpc.QuotaFailure'
+  )?.violations || [];
+  const retryDelay = details?.error?.details?.find(
+    (item) => item?.['@type'] === 'type.googleapis.com/google.rpc.RetryInfo'
+  )?.retryDelay;
+
+  const dailyViolation = violations.find((item) => String(item?.quotaId || '').toLowerCase().includes('perday'));
+  const anyViolation = dailyViolation || violations[0];
+  const quotaModel = anyViolation?.quotaDimensions?.model || null;
+  const quotaMetric = anyViolation?.quotaMetric || null;
+  const limitMatch = errorMessage.match(/limit:\s*([^,\n*]+)/i);
+  const limitValue = limitMatch?.[1]?.trim() || null;
+
+  let summary = null;
+  if (dailyViolation) {
+    summary = `Daily Gemini quota exhausted${quotaModel ? ` for ${quotaModel}` : ''}.`;
+  } else if (anyViolation) {
+    summary = `Gemini quota exhausted${quotaModel ? ` for ${quotaModel}` : ''}.`;
+  }
+
+  if (summary && retryDelay) {
+    summary += ` Retry after ${retryDelay.replace(/s$/, ' seconds')}.`;
+  }
+
+  return {
+    summary,
+    metric: quotaMetric,
+    model: quotaModel,
+    limit: limitValue,
+    retryDelay: retryDelay || null,
+    isDaily: Boolean(dailyViolation)
+  };
+}
+
 app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
@@ -404,11 +441,12 @@ app.post('/api/extract', requireAuth, extractionLimiter, async (req, res) => {
       const lastStatus = lastFailure?.status;
       const geminiCode = lastFailure?.details?.error?.code;
       const geminiMsg  = lastFailure?.details?.error?.message ?? '';
+      const quotaHint = extractGeminiQuotaHint(lastFailure?.details);
 
       // Human-readable top-level error message
       let friendlyError;
       if (lastStatus === 429 || geminiCode === 429) {
-        friendlyError = 'Gemini API quota exceeded for all available models. Please wait a few minutes and try again, or upgrade your Google AI plan at https://ai.dev/rate-limit.';
+        friendlyError = quotaHint.summary || 'Gemini API quota exceeded for all available models. Please wait a few minutes and try again, or upgrade your Google AI plan at https://ai.dev/rate-limit.';
       } else if (lastStatus === 404) {
         friendlyError = 'None of the configured Gemini models are available for your API key. Update GEMINI_MODEL / GEMINI_FALLBACK_MODELS in your environment.';
       } else if (lastStatus === 401 || lastStatus === 403) {
@@ -421,7 +459,8 @@ app.post('/api/extract', requireAuth, extractionLimiter, async (req, res) => {
         error: friendlyError,
         triedModels: modelCandidates,
         geminiStatus: lastStatus,
-        geminiMessage: geminiMsg || undefined
+        geminiMessage: geminiMsg || undefined,
+        quotaHint: quotaHint.summary ? quotaHint : undefined
       });
     }
 
