@@ -4,17 +4,26 @@ import User from '../models/User.js';
 
 dotenv.config();
 
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-jwt-secret-change-me';
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'dev-refresh-secret-change-me';
+const JWT_EXPIRY = process.env.JWT_EXPIRY || '900s';
+const JWT_REFRESH_EXPIRY = process.env.JWT_REFRESH_EXPIRY || '7d';
+
+if (process.env.NODE_ENV === 'production' && (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET)) {
+  console.warn('JWT secrets are missing in production environment. Set JWT_SECRET and JWT_REFRESH_SECRET.');
+}
+
 const generateTokens = (user) => {
   const accessToken = jwt.sign(
     { id: user.id, username: user.username, email: user.email, role: user.role },
-    process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRY }
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRY }
   );
 
   const refreshToken = jwt.sign(
     { id: user.id },
-    process.env.JWT_REFRESH_SECRET,
-    { expiresIn: process.env.JWT_REFRESH_EXPIRY }
+    JWT_REFRESH_SECRET,
+    { expiresIn: JWT_REFRESH_EXPIRY }
   );
 
   return { accessToken, refreshToken };
@@ -100,7 +109,7 @@ export const refreshAccessToken = async (req, res, next) => {
     }
 
     try {
-      const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+      const decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
       const user = await User.findByPk(decoded.id);
 
       if (!user) {
