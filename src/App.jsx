@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { loadInitialData, saveEntries, saveDarkMode } from './db';
 import { normalizeFormData, validateInvoiceEntry } from './validation';
 import { compressImage } from './imageUtils';
+import { inferInvoiceFieldsFromOcrText } from './ocrUtils';
 
 const EXTRACT_ENDPOINT = '/api/extract';
 
@@ -324,6 +325,46 @@ export default function App() {
     return pastEntry ? pastEntry.nameOfSupplier : '';
   };
 
+  const runLocalOcr = async (imageDataUrl) => {
+    if (!imageDataUrl) {
+      showToast('Please capture/upload a receipt image first.', 'error');
+      return;
+    }
+
+    setIsScanning(true);
+    setScanError('');
+    setScanStatusMsg('Running local OCR (no AI quota)...');
+
+    try {
+      const { createWorker } = await import('tesseract.js');
+      const worker = await createWorker('eng');
+      const {
+        data: { text }
+      } = await worker.recognize(imageDataUrl);
+      await worker.terminate();
+
+      const extracted = inferInvoiceFieldsFromOcrText(text);
+      let supplierName = formData.nameOfSupplier;
+      if (!supplierName && extracted.tpinOfSupplier) {
+        supplierName = getSupplierNameFromMemory(extracted.tpinOfSupplier) || '';
+      }
+
+      const merged = normalizeFormData({
+        ...formData,
+        ...extracted,
+        nameOfSupplier: supplierName || extracted.nameOfSupplier || formData.nameOfSupplier
+      });
+
+      setFormData(merged);
+      showToast('OCR completed. Please verify extracted fields.', 'success');
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : 'OCR failed. Please try a clearer image.');
+    } finally {
+      setIsScanning(false);
+      setScanStatusMsg('');
+    }
+  };
+
   const analyzeDocument = async (base64Data, mimeType) => {
     setIsScanning(true);
     setScanError('');
@@ -526,6 +567,30 @@ export default function App() {
       setIsScanning(false);
     } finally {
       e.target.value = ''; 
+    }
+  };
+
+  const handleOcrOnlyInvoice = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      if (!file.type.startsWith('image/')) {
+        showToast('OCR mode currently supports images only.', 'error');
+        return;
+      }
+
+      setIsScanning(true);
+      setScanStatusMsg('Preparing image for OCR...');
+      const { preview } = await compressImage(file);
+      setPreviewImage(preview);
+      await runLocalOcr(preview);
+    } catch (_) {
+      setScanError('Failed to process image for OCR.');
+      setIsScanning(false);
+      setScanStatusMsg('');
+    } finally {
+      e.target.value = '';
     }
   };
 
@@ -797,6 +862,11 @@ export default function App() {
               <label className={`relative cursor-pointer px-5 py-2.5 border rounded-xl shadow-sm text-sm font-bold transition-all transform active:scale-95 ${isScanning || cameraMode ? 'opacity-50 cursor-not-allowed' : isDarkMode ? 'border-purple-700 bg-purple-900/40 text-purple-300 hover:bg-purple-900/60' : 'border-purple-300 text-purple-700 bg-purple-50 hover:bg-purple-100'}`}>
                 <span>{isScanning ? 'Processing...' : '📁 Upload PDF/Image'}</span>
                 <input type="file" accept="image/*,application/pdf" className="sr-only" onChange={handleScanInvoice} disabled={isScanning || cameraMode} />
+              </label>
+
+              <label className={`relative cursor-pointer px-5 py-2.5 border rounded-xl shadow-sm text-sm font-bold transition-all transform active:scale-95 ${isScanning || cameraMode ? 'opacity-50 cursor-not-allowed' : isDarkMode ? 'border-amber-700 bg-amber-900/40 text-amber-300 hover:bg-amber-900/60' : 'border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100'}`}>
+                <span>{isScanning ? 'Processing...' : '🔎 OCR (No AI)'}</span>
+                <input type="file" accept="image/*" className="sr-only" onChange={handleOcrOnlyInvoice} disabled={isScanning || cameraMode} />
               </label>
 
               <button type="button" onClick={() => startCamera('qr')} disabled={isScanning || cameraMode} className={`px-5 py-2.5 border rounded-xl shadow-sm text-sm font-bold transition-all transform active:scale-95 ${isScanning || cameraMode ? 'opacity-50 cursor-not-allowed' : isDarkMode ? 'border-green-700 bg-green-900/40 text-green-300 hover:bg-green-900/60' : 'border-green-300 text-green-700 bg-green-50 hover:bg-green-100'}`}>

@@ -7,6 +7,7 @@ Now includes:
 - Server-side shared entries sync (all signed-in devices merge into one shared dataset)
 - Stable invoice IDs for reliable edit/delete/select behavior
 - Server-side AI extraction endpoint (`/api/extract`) to keep API keys out of the browser
+- Local OCR mode (`OCR (No AI)`) for image receipts when Gemini quota is unavailable
 - Login page with cookie-based session auth
 - Zod-based form validation
 - Tailwind CSS compiled locally (no CDN in production)
@@ -85,5 +86,7 @@ Health endpoint:
    - Ensure the domain route forwards `/api/*` to the same app service.
 - `cdn.tailwindcss.com should not be used in production`:
    - Fixed in this project by switching to compiled Tailwind via PostCSS.
+- Gemini quota exhausted (`429 RESOURCE_EXHAUSTED`):
+   - Use the `OCR (No AI)` upload button for image receipts, then verify/edit extracted fields.
 - `Host validation failed` / `Host is not supported` messages:
    - Usually from a browser extension, not this app runtime.
